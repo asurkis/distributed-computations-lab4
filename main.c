@@ -153,9 +153,12 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
+  int found_n_children = 0;
   self.use_mutex = 0;
+
   for (size_t i = 0; i < argc; ++i) {
     if (strcmp("-p", argv[i]) == 0) {
+      found_n_children = 1;
       size_t n_children;
       if (i + 1 >= argc || sscanf(argv[i + 1], "%zu", &n_children) != 1) {
         printf("Usage: %s -p <number of processes> [--mutexl]\n", argv[0]);
@@ -165,6 +168,11 @@ int main(int argc, char *argv[]) {
     } else if (strcmp("--mutexl", argv[i]) == 0) {
       self.use_mutex = 1;
     }
+  }
+
+  if (!found_n_children) {
+    printf("Usage: %s -p <number of processes> [--mutexl]\n", argv[0]);
+    return 0;
   }
 
   self.pipes_log = fopen(pipes_log, "w");
