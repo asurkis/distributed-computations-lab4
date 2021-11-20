@@ -148,17 +148,29 @@ static int run_parent() {
 timestamp_t get_lamport_time() { return self.local_time; }
 
 int main(int argc, char *argv[]) {
-  size_t n_children;
-  if (argc < 3 || sscanf(argv[2], "%zu", &n_children) != 1) {
-    printf("Usage: %s -p <number of processes>\n", argv[0]);
+  if (argc < 3) {
+    printf("Usage: %s -p <number of processes> [--mutexl]\n", argv[0]);
     return 0;
+  }
+
+  self.use_mutex = 0;
+  for (size_t i = 0; i < argc; ++i) {
+    if (strcmp("-p", argv[i]) == 0) {
+      size_t n_children;
+      if (i + 1 >= argc || sscanf(argv[i + 1], "%zu", &n_children) != 1) {
+        printf("Usage: %s -p <number of processes> [--mutexl]\n", argv[0]);
+        return 0;
+      }
+      self.n_processes = n_children + 1;
+    } else if (strcmp("--mutexl", argv[i]) == 0) {
+      self.use_mutex = 1;
+    }
   }
 
   self.pipes_log = fopen(pipes_log, "w");
   self.events_log = fopen(events_log, "a");
   self.local_time = 0;
 
-  self.n_processes = n_children + 1;
   self.cs_queue = malloc(sizeof(struct QueueEntry) * self.n_processes);
   self.cs_queue_len = 0;
 
