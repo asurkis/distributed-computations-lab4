@@ -1,7 +1,6 @@
 #ifndef _PA23_H_
 #define _PA23_H_
 
-#include "banking.h"
 #include "common.h"
 #include "ipc.h"
 #include "pa2345.h"
@@ -61,8 +60,6 @@ struct Self {
   size_t n_processes;
 
   timestamp_t local_time;
-
-  balance_t my_balance;
 };
 
 #endif

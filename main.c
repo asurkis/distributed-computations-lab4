@@ -50,38 +50,16 @@ static int wait_for_message(struct Self *self, size_t from, Message *msg,
   return 0;
 }
 
-void transfer(void *parent_data, local_id src, local_id dst, balance_t amount) {
-  struct Self *self = parent_data;
-  Message msg;
-  msg.s_header.s_magic = MESSAGE_MAGIC;
-  msg.s_header.s_local_time = ++self->local_time;
-  msg.s_header.s_type = TRANSFER;
-  msg.s_header.s_payload_len = sizeof(TransferOrder);
-  TransferOrder *order = (TransferOrder *)msg.s_payload;
-  order->s_amount = amount;
-  order->s_src = src;
-  order->s_dst = dst;
-  send(self, src, &msg);
-  wait_for_message(self, dst, &msg, ACK);
-}
-
 static int run_child(struct Self *self) {
   Message msg;
-  BalanceHistory history;
   CHK_RETCODE(init_process(self));
-
-  history.s_id = self->id;
-  history.s_history[0].s_balance = self->my_balance;
-  history.s_history[0].s_time = 0;
-  history.s_history[0].s_balance_pending_in = 0;
-  history.s_history_len = 1;
 
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_local_time = ++self->local_time;
   msg.s_header.s_type = STARTED;
   msg.s_header.s_payload_len = snprintf(
       msg.s_payload, MAX_PAYLOAD_LEN, log_started_fmt, (int)self->local_time,
-      (int)self->id, (int)getpid(), (int)getppid(), self->my_balance);
+      (int)self->id, (int)getpid(), (int)getppid(), 0);
   fputs(msg.s_payload, self->events_log);
   CHK_RETCODE(send_multicast(self, &msg));
 
@@ -99,48 +77,8 @@ static int run_child(struct Self *self) {
     CHK_RETCODE(retcode);
     if (!retcode)
       continue;
-    for (timestamp_t t =
-             history.s_history[history.s_history_len - 1].s_time + 1;
-         t < self->local_time; ++t) {
-      history.s_history[history.s_history_len].s_balance = self->my_balance;
-      history.s_history[history.s_history_len].s_time = t;
-      history.s_history[history.s_history_len].s_balance_pending_in = 0;
-      history.s_history_len++;
-    }
     if (msg.s_header.s_type == STOP)
       break;
-    if (msg.s_header.s_type == TRANSFER) {
-      TransferOrder *order = (TransferOrder *)msg.s_payload;
-      if (order->s_src == self->id) {
-        msg.s_header.s_local_time = ++self->local_time;
-        send(self, order->s_dst, &msg);
-        self->my_balance -= order->s_amount;
-      }
-
-      if (order->s_dst == self->id) {
-        for (size_t i = 0; i < history.s_history_len; ++i) {
-          BalanceState *state = &history.s_history[i];
-          timestamp_t ts = state->s_time;
-          if (msg.s_header.s_local_time - 2 < ts && ts < self->local_time) {
-            state->s_balance_pending_in += order->s_amount;
-          }
-        }
-        msg.s_header.s_magic = MESSAGE_MAGIC;
-        msg.s_header.s_payload_len = 0;
-        msg.s_header.s_type = ACK;
-        msg.s_header.s_local_time = ++self->local_time;
-        send(self, 0, &msg);
-        self->my_balance += order->s_amount;
-      }
-    }
-  }
-
-  for (timestamp_t t = history.s_history[history.s_history_len - 1].s_time + 1;
-       t <= self->local_time; ++t) {
-    history.s_history[history.s_history_len].s_balance = self->my_balance;
-    history.s_history[history.s_history_len].s_time = t;
-    history.s_history[history.s_history_len].s_balance_pending_in = 0;
-    history.s_history_len++;
   }
 
   msg.s_header.s_magic = MESSAGE_MAGIC;
@@ -148,7 +86,7 @@ static int run_child(struct Self *self) {
   msg.s_header.s_type = DONE;
   msg.s_header.s_payload_len =
       snprintf(msg.s_payload, MAX_PAYLOAD_LEN, log_done_fmt,
-               (int)self->local_time, (int)self->id, self->my_balance);
+               (int)self->local_time, (int)self->id, 0);
   fputs(msg.s_payload, self->events_log);
   CHK_RETCODE(send_multicast(self, &msg));
 
@@ -161,29 +99,18 @@ static int run_child(struct Self *self) {
   fprintf(self->events_log, log_received_all_done_fmt, (int)self->local_time,
           (int)self->id);
 
-  msg.s_header.s_magic = MESSAGE_MAGIC;
-  msg.s_header.s_local_time = ++self->local_time;
-  msg.s_header.s_type = BALANCE_HISTORY;
-  msg.s_header.s_payload_len =
-      (char *)&history.s_history[history.s_history_len] - (char *)&history;
-  memcpy(msg.s_payload, &history, msg.s_header.s_payload_len);
-  CHK_RETCODE(send(self, 0, &msg));
-
   CHK_RETCODE(deinit_process(self));
   return 0;
 }
 
 static int run_parent(struct Self *self) {
   Message msg;
-  AllHistory history;
   CHK_RETCODE(init_process(self));
 
   for (size_t i = 1; i < self->n_processes; ++i)
     CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
   fprintf(self->events_log, log_received_all_started_fmt, (int)self->local_time,
           (int)self->id);
-
-  bank_robbery(self, self->n_processes - 1);
 
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_local_time = ++self->local_time;
@@ -195,14 +122,6 @@ static int run_parent(struct Self *self) {
     CHK_RETCODE(wait_for_message(self, i, &msg, DONE));
   fprintf(self->events_log, log_received_all_done_fmt, (int)self->local_time,
           (int)self->id);
-
-  history.s_history_len = self->n_processes - 1;
-  for (size_t i = 1; i < self->n_processes; ++i) {
-    CHK_RETCODE(wait_for_message(self, i, &msg, BALANCE_HISTORY));
-    memcpy(&history.s_history[i - 1], msg.s_payload,
-           msg.s_header.s_payload_len);
-  }
-  print_history(&history);
 
   for (size_t i = 1; i < self->n_processes; ++i)
     wait(NULL);
@@ -223,9 +142,8 @@ int main(int argc, char *argv[]) {
            argv[0]);
     return 0;
   }
-  if (argc < 3 + n_children) {
-    printf("Usage: %s -p <number of processes>"
-           "<amount of money for each process>\n",
+  if (argc < 2) {
+    printf("Usage: %s -p <number of processes>\n",
            argv[0]);
     return 0;
   }
@@ -254,7 +172,6 @@ int main(int argc, char *argv[]) {
   fflush(self.pipes_log);
 
   for (size_t id = 1; id < self.n_processes; ++id) {
-    sscanf(argv[2 + id], "%" SCNd16, &self.my_balance);
     pid_t pid = fork();
     CHK_ERRNO(pid);
     if (!pid) {
