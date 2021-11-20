@@ -51,17 +51,24 @@
     }                                                                          \
   } while (0)
 
+struct QueueEntry {
+  size_t id;
+  timestamp_t request_ts;
+};
+
 struct Self {
   int *pipes;
   FILE *events_log;
   FILE *pipes_log;
-  size_t *cs_queue;
+
+  struct QueueEntry *cs_queue;
   size_t cs_queue_len;
 
   size_t id;
   size_t n_processes;
 
   timestamp_t local_time;
+  int use_mutex;
 };
 
 #endif

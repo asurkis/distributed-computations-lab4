@@ -43,13 +43,13 @@ static int deinit_process() {
   return 0;
 }
 
-static int send_empty(size_t dst, MessageType type) {
+/* static int send_empty(size_t dst, MessageType type) {
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_local_time = ++self.local_time;
   msg.s_header.s_type = type;
   msg.s_header.s_payload_len = 0;
-  CHK_RETCODE(send(&self, (local_id)dst, &msg));
-}
+  return send(&self, (local_id)dst, &msg);
+} */
 
 static int send_empty_multicast(MessageType type) {
   msg.s_header.s_magic = MESSAGE_MAGIC;
@@ -104,13 +104,17 @@ static int run_child() {
   fprintf(self.events_log, log_received_all_started_fmt, (int)self.local_time,
           (int)self.id);
 
-  for (;;) {
-    int retcode = receive_any(&self, &msg);
-    CHK_RETCODE(retcode);
-    if (!retcode)
-      continue;
-    if (msg.s_header.s_type == STOP)
-      break;
+  if (self.use_mutex) {
+    request_cs(&self);
+  }
+  for (size_t i = 0; i < 5 * self.id; ++i) {
+    char buf[256];
+    snprintf(buf, sizeof(buf), log_loop_operation_fmt, (int)self.id,
+             (int)(i + 1), (int)(5 * self.id));
+    print(buf);
+  }
+  if (self.use_mutex) {
+    request_cs(&self);
   }
 
   CHK_RETCODE(sync_started_done(DONE));
@@ -128,8 +132,6 @@ static int run_parent() {
     CHK_RETCODE(wait_for_message(i, STARTED));
   fprintf(self.events_log, log_received_all_started_fmt, (int)self.local_time,
           (int)self.id);
-
-  CHK_RETCODE(send_empty_multicast(STOP));
 
   for (size_t i = 1; i < self.n_processes; ++i)
     CHK_RETCODE(wait_for_message(i, DONE));
@@ -157,7 +159,7 @@ int main(int argc, char *argv[]) {
   self.local_time = 0;
 
   self.n_processes = n_children + 1;
-  self.cs_queue = malloc(sizeof(size_t) * self.n_processes);
+  self.cs_queue = malloc(sizeof(struct QueueEntry) * self.n_processes);
   self.cs_queue_len = 0;
 
   self.pipes = malloc(2 * sizeof(int) * self.n_processes * self.n_processes);
