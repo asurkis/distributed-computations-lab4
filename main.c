@@ -43,6 +43,22 @@ static int deinit_process() {
   return 0;
 }
 
+static int send_empty(size_t dst, MessageType type) {
+  msg.s_header.s_magic = MESSAGE_MAGIC;
+  msg.s_header.s_local_time = ++self.local_time;
+  msg.s_header.s_type = type;
+  msg.s_header.s_payload_len = 0;
+  CHK_RETCODE(send(&self, (local_id)dst, &msg));
+}
+
+static int send_empty_multicast(MessageType type) {
+  msg.s_header.s_magic = MESSAGE_MAGIC;
+  msg.s_header.s_local_time = ++self.local_time;
+  msg.s_header.s_type = type;
+  msg.s_header.s_payload_len = 0;
+  return send_multicast(&self, &msg);
+}
+
 static int wait_for_message(size_t from, MessageType type) {
   int retcode = 0;
   while (!retcode) {
@@ -70,9 +86,20 @@ static int sync_started_done(MessageType type) {
   return 0;
 }
 
+int request_cs(const void *self_) {
+  (void)self_;
+  CHK_RETCODE(send_empty_multicast(CS_REQUEST));
+  return 0;
+}
+
+int release_cs(const void *self_) {
+  (void)self_;
+  CHK_RETCODE(send_empty_multicast(CS_RELEASE));
+  return 0;
+}
+
 static int run_child() {
   CHK_RETCODE(init_process());
-
   CHK_RETCODE(sync_started_done(STARTED));
   fprintf(self.events_log, log_received_all_started_fmt, (int)self.local_time,
           (int)self.id);
@@ -102,11 +129,7 @@ static int run_parent() {
   fprintf(self.events_log, log_received_all_started_fmt, (int)self.local_time,
           (int)self.id);
 
-  msg.s_header.s_magic = MESSAGE_MAGIC;
-  msg.s_header.s_local_time = ++self.local_time;
-  msg.s_header.s_type = STOP;
-  msg.s_header.s_payload_len = 0;
-  CHK_RETCODE(send_multicast(&self, &msg));
+  CHK_RETCODE(send_empty_multicast(STOP));
 
   for (size_t i = 1; i < self.n_processes; ++i)
     CHK_RETCODE(wait_for_message(i, DONE));
@@ -134,6 +157,9 @@ int main(int argc, char *argv[]) {
   self.local_time = 0;
 
   self.n_processes = n_children + 1;
+  self.cs_queue = malloc(sizeof(size_t) * self.n_processes);
+  self.cs_queue_len = 0;
+
   self.pipes = malloc(2 * sizeof(int) * self.n_processes * self.n_processes);
   for (size_t i = 0; i < self.n_processes; ++i) {
     for (size_t j = 0; j < self.n_processes; ++j) {

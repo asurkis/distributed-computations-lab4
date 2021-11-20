@@ -55,6 +55,8 @@ struct Self {
   int *pipes;
   FILE *events_log;
   FILE *pipes_log;
+  size_t *cs_queue;
+  size_t cs_queue_len;
 
   size_t id;
   size_t n_processes;
