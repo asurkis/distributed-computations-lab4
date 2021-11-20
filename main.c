@@ -1,4 +1,4 @@
-#include "pa23.h"
+#include "main.h"
 
 static int init_process(struct Self *self) {
   for (size_t i = 0; i < self->n_processes; ++i) {

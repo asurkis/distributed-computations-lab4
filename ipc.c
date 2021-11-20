@@ -1,4 +1,4 @@
-#include "pa23.h"
+#include "main.h"
 
 static int write_repeat(int fd, char const *buf, size_t size) {
   while (size) {
