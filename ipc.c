@@ -62,8 +62,11 @@ int receive(void *self_, local_id from, Message *msg) {
     retcode = read_repeat(fd, msg->s_payload, msg->s_header.s_payload_len);
     CHK_RETCODE(retcode);
   }
-  if (self->local_time < msg->s_header.s_local_time)
-    self->local_time = msg->s_header.s_local_time;
+
+  timestamp_t ts = msg->s_header.s_local_time;
+  self->process_info[from].last_ts = ts;
+  if (self->local_time < ts)
+    self->local_time = ts;
   ++self->local_time;
   return 1;
 }
